@@ -10,7 +10,8 @@ import {
   backgroundJobs,
 } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { isAuthenticated } from "./replit_integrations/auth/replitAuth";
+import { setupAuth, isAuthenticated } from "./replit_integrations/auth/replitAuth";
+import { registerAuthRoutes } from "./replit_integrations/auth/routes";
 
 function getUserId(req: any): string {
   if (req.user?.authMethod === "email") {
@@ -23,6 +24,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  await setupAuth(app);
+  registerAuthRoutes(app);
 
   app.get("/api/platforms", isAuthenticated, async (req, res) => {
     try {
