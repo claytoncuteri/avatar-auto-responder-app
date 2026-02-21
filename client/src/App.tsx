@@ -44,28 +44,10 @@ function AppLayout() {
   }
 
   if (!user) {
+    window.location.href = "/api/login";
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="glass-panel p-12 max-w-md w-full text-center space-y-6" data-testid="login-card">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <div className="p-2 rounded-xl bg-primary/10">
-              <Zap className="h-8 w-8 text-primary" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold gradient-text" data-testid="text-app-title">
-              Avatar Auto Responder
-            </h1>
-            <p className="text-muted-foreground text-sm">
-              AI-powered social media automation platform
-            </p>
-          </div>
-          <a href="/api/login">
-            <Button size="lg" className="w-full" data-testid="button-login">
-              Sign In with Replit
-            </Button>
-          </a>
-        </div>
+      <div className="flex items-center justify-center min-h-screen" data-testid="redirecting">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
