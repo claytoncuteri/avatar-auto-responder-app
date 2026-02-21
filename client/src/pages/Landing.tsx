@@ -63,7 +63,7 @@ export default function Landing() {
             </div>
             <span className="font-bold gradient-text text-lg">Avatar</span>
           </div>
-          <a href="/api/login">
+          <a href="/auth">
             <Button data-testid="button-header-login">
               Get Started
               <ArrowRight className="h-4 w-4 ml-1" />
@@ -88,7 +88,7 @@ export default function Landing() {
               Automatically detect keyword triggers in your social media comments and respond with personalized DMs and replies. Grow your engagement on autopilot.
             </p>
             <div className="flex items-center justify-center gap-4 pt-2">
-              <a href="/api/login">
+              <a href="/auth">
                 <Button size="lg" className="text-base px-8" data-testid="button-hero-cta">
                   Start Free
                   <ArrowRight className="h-4 w-4 ml-2" />
@@ -189,7 +189,7 @@ export default function Landing() {
           <p className="text-muted-foreground text-lg">
             Join thousands of creators and businesses who save hours every week with Avatar Auto Responder.
           </p>
-          <a href="/api/login">
+          <a href="/auth">
             <Button size="lg" className="text-base px-8 mt-2" data-testid="button-cta-start">
               Get Started for Free
               <ArrowRight className="h-4 w-4 ml-2" />

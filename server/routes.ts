@@ -13,6 +13,9 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { isAuthenticated } from "./replit_integrations/auth/replitAuth";
 
 function getUserId(req: any): string {
+  if (req.user?.authMethod === "email") {
+    return req.user.userId;
+  }
   return req.user?.claims?.sub;
 }
 

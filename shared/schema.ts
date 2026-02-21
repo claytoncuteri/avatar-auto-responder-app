@@ -2,6 +2,9 @@ import { pgTable, text, serial, timestamp, boolean, integer, jsonb, index } from
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+export { sessions, users } from "@shared/models/auth";
+export type { User, UpsertUser } from "@shared/models/auth";
+
 export const platformConnections = pgTable("platform_connections", {
   id: serial("id").primaryKey(),
   userId: text("user_id").notNull(),

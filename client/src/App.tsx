@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import Landing from "@/pages/Landing";
+import AuthPage from "@/pages/AuthPage";
 import Dashboard from "@/pages/Dashboard";
 import Platforms from "@/pages/Platforms";
 import Keywords from "@/pages/Keywords";
@@ -45,7 +46,12 @@ function AppLayout() {
   }
 
   if (!user) {
-    return <Landing />;
+    return (
+      <Switch>
+        <Route path="/auth" component={AuthPage} />
+        <Route component={Landing} />
+      </Switch>
+    );
   }
 
   return (
