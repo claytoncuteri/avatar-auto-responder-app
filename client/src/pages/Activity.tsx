@@ -19,17 +19,16 @@ export default function ActivityPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [platformFilter, setPlatformFilter] = useState("all");
 
-  const queryParams = new URLSearchParams();
-  if (typeFilter !== "all") queryParams.set("activityType", typeFilter);
-  if (platformFilter !== "all") queryParams.set("platform", platformFilter);
+  const queryUrl = (() => {
+    const params = new URLSearchParams();
+    if (typeFilter !== "all") params.set("activityType", typeFilter);
+    if (platformFilter !== "all") params.set("platform", platformFilter);
+    const qs = params.toString();
+    return qs ? `/api/activity?${qs}` : "/api/activity";
+  })();
 
   const { data: activities, isLoading } = useQuery<ActivityLogEntry[]>({
-    queryKey: ["/api/activity", typeFilter, platformFilter],
-    queryFn: async () => {
-      const res = await fetch(`/api/activity?${queryParams.toString()}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
+    queryKey: [queryUrl],
   });
 
   if (isLoading) {

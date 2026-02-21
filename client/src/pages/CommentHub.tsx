@@ -23,17 +23,16 @@ export default function CommentHub() {
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const [replyText, setReplyText] = useState("");
 
-  const queryParams = new URLSearchParams();
-  if (platformFilter !== "all") queryParams.set("platform", platformFilter);
-  if (unrespondedOnly) queryParams.set("unresponded", "true");
+  const queryUrl = (() => {
+    const params = new URLSearchParams();
+    if (platformFilter !== "all") params.set("platform", platformFilter);
+    if (unrespondedOnly) params.set("unresponded", "true");
+    const qs = params.toString();
+    return qs ? `/api/comments?${qs}` : "/api/comments";
+  })();
 
   const { data: comments, isLoading } = useQuery<Comment[]>({
-    queryKey: ["/api/comments", platformFilter, unrespondedOnly.toString()],
-    queryFn: async () => {
-      const res = await fetch(`/api/comments?${queryParams.toString()}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
+    queryKey: [queryUrl],
   });
 
   const respondMutation = useMutation({
@@ -42,7 +41,7 @@ export default function CommentHub() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/comments"] });
+      queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith("/api/comments") });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
       toast({ title: "Response sent" });
       setReplyingTo(null);
