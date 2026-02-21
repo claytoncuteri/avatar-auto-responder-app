@@ -16,6 +16,7 @@ import {
   Zap,
 } from "lucide-react";
 
+import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import Platforms from "@/pages/Platforms";
 import Keywords from "@/pages/Keywords";
@@ -44,12 +45,7 @@ function AppLayout() {
   }
 
   if (!user) {
-    window.location.href = "/api/login";
-    return (
-      <div className="flex items-center justify-center min-h-screen" data-testid="redirecting">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <Landing />;
   }
 
   return (
