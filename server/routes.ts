@@ -12,6 +12,30 @@ import {
 import { eq, and, desc, sql } from "drizzle-orm";
 import { setupAuth, isAuthenticated } from "./replit_integrations/auth/replitAuth";
 import { registerAuthRoutes } from "./replit_integrations/auth/routes";
+import { youtubeService } from "./services/youtube";
+import crypto from "crypto";
+
+function createOAuthState(userId: string): string {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const payload = JSON.stringify({ userId, nonce, ts: Date.now() });
+  const secret = process.env.SESSION_SECRET || "fallback";
+  const hmac = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+  return Buffer.from(JSON.stringify({ payload, hmac })).toString("base64url");
+}
+
+function verifyOAuthState(state: string): { userId: string; nonce: string; ts: number } | null {
+  try {
+    const { payload, hmac } = JSON.parse(Buffer.from(state, "base64url").toString());
+    const secret = process.env.SESSION_SECRET || "fallback";
+    const expected = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+    if (!crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expected))) return null;
+    const data = JSON.parse(payload);
+    if (Date.now() - data.ts > 10 * 60 * 1000) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
 
 function getUserId(req: any): string {
   if (req.user?.authMethod === "email") {
@@ -257,6 +281,216 @@ export async function registerRoutes(
       console.error("Error fetching stats:", error);
       res.status(500).json({ error: "Failed to fetch dashboard stats" });
     }
+  });
+
+  app.get("/api/youtube/auth", isAuthenticated, (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+      const redirectUri = `${protocol}://${req.hostname}/api/youtube/callback`;
+      const state = createOAuthState(userId);
+      const authUrl = youtubeService.getOAuthUrl(redirectUri, state);
+      res.json({ authUrl });
+    } catch (error) {
+      console.error("YouTube auth error:", error);
+      res.status(500).json({ error: "Failed to generate YouTube auth URL" });
+    }
+  });
+
+  app.get("/api/youtube/callback", async (req, res) => {
+    try {
+      const { code, state, error: oauthError } = req.query;
+
+      if (oauthError) {
+        console.error("YouTube OAuth error:", oauthError);
+        return res.redirect("/platforms?error=youtube_auth_denied");
+      }
+
+      if (!code || !state) {
+        return res.redirect("/platforms?error=youtube_auth_failed");
+      }
+
+      const stateData = verifyOAuthState(state as string);
+      if (!stateData) {
+        console.error("Invalid or expired OAuth state");
+        return res.redirect("/platforms?error=youtube_auth_failed");
+      }
+      const userId = stateData.userId;
+
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+      const redirectUri = `${protocol}://${req.hostname}/api/youtube/callback`;
+
+      const tokens = await youtubeService.exchangeCodeForTokens(code as string, redirectUri);
+
+      const channelInfo = await youtubeService.getChannelInfo(tokens.access_token);
+      const channel = channelInfo.items?.[0];
+
+      if (!channel) {
+        return res.redirect("/platforms?error=youtube_no_channel");
+      }
+
+      const channelTitle = channel.snippet?.title || "YouTube Channel";
+      const channelId = channel.id;
+
+      const existing = await db.select().from(platformConnections)
+        .where(and(
+          eq(platformConnections.userId, userId),
+          eq(platformConnections.platform, "youtube"),
+          eq(platformConnections.accountId, channelId)
+        ));
+
+      if (existing.length > 0) {
+        await db.update(platformConnections)
+          .set({
+            accessToken: tokens.access_token,
+            refreshToken: tokens.refresh_token || existing[0].refreshToken,
+            tokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+            accountName: channelTitle,
+            isActive: true,
+            updatedAt: new Date(),
+            metadata: {
+              subscriberCount: channel.statistics?.subscriberCount,
+              videoCount: channel.statistics?.videoCount,
+              thumbnailUrl: channel.snippet?.thumbnails?.default?.url,
+            },
+          })
+          .where(eq(platformConnections.id, existing[0].id));
+      } else {
+        await db.insert(platformConnections).values({
+          userId,
+          platform: "youtube",
+          accountName: channelTitle,
+          accountId: channelId,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || null,
+          tokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+          isActive: true,
+          metadata: {
+            subscriberCount: channel.statistics?.subscriberCount,
+            videoCount: channel.statistics?.videoCount,
+            thumbnailUrl: channel.snippet?.thumbnails?.default?.url,
+          },
+        });
+      }
+
+      await db.insert(activityLog).values({
+        userId,
+        activityType: "platform_connected",
+        platform: "youtube",
+        description: `Connected YouTube channel: ${channelTitle}`,
+        status: "success",
+      });
+
+      res.redirect("/platforms?success=youtube_connected");
+    } catch (error) {
+      console.error("YouTube callback error:", error);
+      res.redirect("/platforms?error=youtube_auth_failed");
+    }
+  });
+
+  app.get("/api/youtube/videos", isAuthenticated, async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const connection = await db.select().from(platformConnections)
+        .where(and(
+          eq(platformConnections.userId, userId),
+          eq(platformConnections.platform, "youtube"),
+          eq(platformConnections.isActive, true)
+        ))
+        .limit(1);
+
+      if (!connection.length) {
+        return res.status(404).json({ error: "No YouTube connection found" });
+      }
+
+      const channelId = connection[0].accountId;
+      if (!channelId) {
+        return res.status(400).json({ error: "No channel ID found" });
+      }
+
+      const maxResults = parseInt(req.query.maxResults as string) || 25;
+      const videos = await youtubeService.getChannelVideos(channelId, maxResults);
+      res.json(videos);
+    } catch (error) {
+      console.error("YouTube videos error:", error);
+      res.status(500).json({ error: "Failed to fetch YouTube videos" });
+    }
+  });
+
+  app.get("/api/youtube/comments/:videoId", isAuthenticated, async (req, res) => {
+    try {
+      const videoId = req.params.videoId as string;
+      const pageToken = req.query.pageToken as string | undefined;
+      const result = await youtubeService.getVideoComments(videoId, pageToken);
+      res.json(result);
+    } catch (error) {
+      console.error("YouTube comments error:", error);
+      res.status(500).json({ error: "Failed to fetch YouTube comments" });
+    }
+  });
+
+  app.post("/api/youtube/reply", isAuthenticated, async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const { commentId, text } = req.body;
+
+      if (!commentId || !text) {
+        return res.status(400).json({ error: "commentId and text are required" });
+      }
+
+      const connection = await db.select().from(platformConnections)
+        .where(and(
+          eq(platformConnections.userId, userId),
+          eq(platformConnections.platform, "youtube"),
+          eq(platformConnections.isActive, true)
+        ))
+        .limit(1);
+
+      if (!connection.length || !connection[0].accessToken) {
+        return res.status(404).json({ error: "No active YouTube connection found" });
+      }
+
+      let accessToken = connection[0].accessToken;
+
+      if (connection[0].tokenExpiresAt && new Date(connection[0].tokenExpiresAt) <= new Date()) {
+        if (!connection[0].refreshToken) {
+          return res.status(401).json({ error: "YouTube token expired. Please reconnect." });
+        }
+        const refreshed = await youtubeService.refreshAccessToken(connection[0].refreshToken);
+        accessToken = refreshed.access_token;
+        await db.update(platformConnections)
+          .set({
+            accessToken: refreshed.access_token,
+            tokenExpiresAt: new Date(Date.now() + refreshed.expires_in * 1000),
+            updatedAt: new Date(),
+          })
+          .where(eq(platformConnections.id, connection[0].id));
+      }
+
+      const result = await youtubeService.replyToComment(commentId, text, accessToken);
+
+      await db.insert(activityLog).values({
+        userId,
+        activityType: "comment_reply",
+        platform: "youtube",
+        description: `Replied to YouTube comment`,
+        status: "success",
+        metadata: { commentId, replyText: text },
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error("YouTube reply error:", error);
+      res.status(500).json({ error: "Failed to reply to comment" });
+    }
+  });
+
+  app.get("/api/youtube/quota", isAuthenticated, (req, res) => {
+    res.json({
+      used: youtubeService.getQuotaUsed(),
+      remaining: youtubeService.getQuotaRemaining(),
+      limit: 10000,
+    });
   });
 
   app.get("/api/webhooks/meta", (req, res) => {

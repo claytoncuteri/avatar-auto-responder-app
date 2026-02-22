@@ -5,8 +5,9 @@ AI-powered social media automation platform that monitors Instagram, Facebook, Y
 
 ## Architecture
 - **Stack**: Express + Vite + React + TypeScript + PostgreSQL (Drizzle ORM)
-- **Auth**: Replit Auth (userId from `req.user.claims.sub`)
+- **Auth**: Dual auth - Email/password (bcrypt) + Google OAuth (Replit OIDC). Admin: admin@avatar.app / admin123
 - **AI**: OpenAI via Replit AI Integrations for generating reply variations
+- **YouTube**: YouTube Data API v3 with OAuth 2.0 for channel authorization, HMAC-signed state for CSRF protection
 - **Frontend**: React with Tailwind CSS, shadcn/ui, wouter routing, TanStack Query
 - **Backend**: Express REST API with Drizzle ORM
 
